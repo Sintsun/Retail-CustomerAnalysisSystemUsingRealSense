@@ -8,10 +8,7 @@ This project implements a customer analysis system that uses an Intel RealSense 
 - [Step 2: Constructing the Store's 3D Model](#step-2-constructing-the-stores-3d-model)
 - [Step 3: Real-Time Face Intersection Tracking, Logging, and 3D Visualization](#step-3-real-time-face-intersection-tracking-logging-and-3d-visualization)
 - [Step 4: Heatmap Generation and Auto-Resizing Image Viewer](#step-4-heatmap-generation-and-auto-resizing-image-viewer)
-- [Configuration and File Structure](#configuration-and-file-structure)
-- [Command-Line Arguments (Step 3)](#command-line-arguments-step-3)
 - [Troubleshooting](#troubleshooting)
-- [License](#license)
 - [Acknowledgements](#acknowledgements)
 
 ---
@@ -160,7 +157,7 @@ A Tkinter-based viewer automatically resizes the saved heatmap images to fit the
 
 ## How to Run
 
-1. **execute the final step script with:**
+1. **Execute the final step script with:**
 python heatmapsWithImage.py
 
 The script will:
@@ -170,7 +167,7 @@ Generate and save heatmaps for each wall.
 Launch a Tkinter window that displays the images with auto-resizing functionality.
 
 
-###Troubleshooting
+### Troubleshooting
 
 Calibration Issues:
 Ensure the camera is properly fixed and that all calibration files exist in the data/ folder.
@@ -187,7 +184,7 @@ If the frame rate is low, try disabling the 3D plot or the real-time video displ
 GUI Problems:
 Ensure that Tkinter is installed and working properly on your system.
 
-###Acknowledgements
+### Acknowledgements
 
 Intel RealSense SDK: For camera integration and streaming.
 MediaPipe: For robust face landmark detection.
