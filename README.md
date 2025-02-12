@@ -137,7 +137,7 @@ Example usage with display enabled:
 
 python retail.py --enable_display --enable_3d_plot
 
-## Step 4: Heatmap Generation and Auto-Resizing Image Viewer
+## Step 4: Heatmap Generation
 In this final step, the script:
 
 Reads Intersection Data:
