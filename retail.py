@@ -1,6 +1,7 @@
 import argparse
 import logging
 import matplotlib
+
 matplotlib.use('TkAgg')
 import pyrealsense2 as rs
 import numpy as np
@@ -19,23 +20,24 @@ import threading
 from collections import deque
 
 ##########################################################
-# Global Crop Size Settings
+# Global Cropping Size Settings (Method 1)
 ##########################################################
-CROP_WIDTH = 640   # Fixed crop width
+CROP_WIDTH = 640  # Fixed crop width
 CROP_HEIGHT = 480  # Fixed crop height
 
 ##########################################################
-# (A) Define a log handler that stores recent log messages in a deque
+# (A) Define log handler to store recent logs in a deque
 ##########################################################
-MAX_LOG_LINES = 20  # Maximum number of log lines to store
+MAX_LOG_LINES = 20  # Maximum number of log lines to save
 log_deque = deque(maxlen=MAX_LOG_LINES)
+
 
 class Cv2LogHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
-        log_deque.append(msg)  # Append each log message to the deque
+        log_deque.append(msg)
 
-# Configure basic logging
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [%(levelname)s] - %(message)s',
@@ -50,28 +52,25 @@ cv2_log_handler.setFormatter(
 logging.getLogger().addHandler(cv2_log_handler)
 
 ##########################################################
-# (B) Excel Writing Functions and Thread for Periodic Flushing
+# (B) Excel Writing Functions and Scheduler Thread
 ##########################################################
-FLUSH_INTERVAL = 2.0      # Check every 2 seconds whether to flush logs to Excel
-FLUSH_BATCH_SIZE = 10     # Flush logs when there are 10 or more records in the buffer
+FLUSH_INTERVAL = 2.0  # Check every 2 seconds if Excel write is needed
+FLUSH_BATCH_SIZE = 10  # Trigger write when the buffer reaches 10 records
 
 excel_queue = queue.Queue()
 flush_event = threading.Event()
 stop_event = threading.Event()
 
+
 def log_intersection_2d_async(face_id, plane_name, u, v, timestamp):
-    """
-    Enqueue a log record for later writing to Excel.
-    """
+    # Here u, v are already converted to feet
     record = (timestamp, face_id, plane_name, u, v)
     excel_queue.put(record)
     if excel_queue.qsize() >= FLUSH_BATCH_SIZE:
         flush_event.set()
 
+
 def flush_excel_queue(xlsx_path):
-    """
-    Flush all records in the excel_queue to the Excel file.
-    """
     temp_records = []
     while not excel_queue.empty():
         temp_records.append(excel_queue.get())
@@ -101,20 +100,16 @@ def flush_excel_queue(xlsx_path):
     except Exception as e:
         logging.error(f"Failed to write to Excel {xlsx_path}, error: {e}")
 
+
 def flush_thread_func(xlsx_path):
-    """
-    Thread function that periodically flushes the Excel queue.
-    """
     while not stop_event.is_set():
         triggered = flush_event.wait(timeout=FLUSH_INTERVAL)
         flush_excel_queue(xlsx_path)
         flush_event.clear()
     flush_excel_queue(xlsx_path)
 
+
 def get_max_face_id_from_xlsm(xlsx_path):
-    """
-    Retrieve the maximum Face_ID from the Excel log file.
-    """
     if not os.path.exists(xlsx_path):
         logging.warning(f"Excel file not found: {xlsx_path}")
         return -1
@@ -147,14 +142,11 @@ def get_max_face_id_from_xlsm(xlsx_path):
         logging.error(f"Cannot read {xlsx_path}, error: {e}")
         return -1
 
+
 ##########################################################
-# Dummy Implementation for ransac_weighted_kabsch
+# Dummy implementation for ransac_weighted_kabsch
 ##########################################################
 def ransac_weighted_kabsch(ref_points, det_points, weights, threshold, max_iterations):
-    """
-    A dummy implementation of the weighted Kabsch algorithm with RANSAC.
-    It returns a rotation matrix R and translation vector t.
-    """
     total_weight = np.sum(weights)
     ref_centroid = np.sum(ref_points * weights, axis=1, keepdims=True) / total_weight
     det_centroid = np.sum(det_points * weights, axis=1, keepdims=True) / total_weight
@@ -171,14 +163,15 @@ def ransac_weighted_kabsch(ref_points, det_points, weights, threshold, max_itera
     inliers = np.ones(det_points.shape[1], dtype=bool)
     return (R, t), inliers
 
+
 ##########################################################
-# KalmanBoxTracker and SORT Tracker Classes
+# Definition of KalmanBoxTracker and SORT Tracker
 ##########################################################
 class KalmanBoxTracker:
     count = 0
 
     def __init__(self, bbox):
-        self.bbox = bbox  # Bounding box [x1, y1, x2, y2]
+        self.bbox = bbox
         self.id = KalmanBoxTracker.count
         KalmanBoxTracker.count += 1
         self.hits = 1
@@ -200,14 +193,11 @@ class KalmanBoxTracker:
 
 class Sort:
     def __init__(self, max_age=10, min_hits=3):
-        self.max_age = max_age  # Maximum frames to keep a tracker without update
-        self.min_hits = min_hits  # Minimum hits to confirm a tracker
+        self.max_age = max_age
+        self.min_hits = min_hits
         self.trackers = []
 
     def update(self, dets):
-        """
-        Update trackers with new detections.
-        """
         matched, unmatched_dets, unmatched_trks = self.associate_detections_to_trackers(dets, self.trackers)
         for m in matched:
             self.trackers[m[1]].update(dets[m[0]])
@@ -225,9 +215,6 @@ class Sort:
         return ret
 
     def associate_detections_to_trackers(self, dets, trackers):
-        """
-        Associate detection bounding boxes to tracker bounding boxes using IOU.
-        """
         if len(trackers) == 0:
             return [], list(range(len(dets))), []
         iou_matrix = np.zeros((len(dets), len(trackers)), dtype=np.float32)
@@ -250,9 +237,6 @@ class Sort:
         return matched_indices, unmatched_dets, unmatched_trks
 
     def iou(self, bb_test, bb_gt):
-        """
-        Compute Intersection over Union (IOU) between two bounding boxes.
-        """
         xx1 = np.maximum(bb_test[0], bb_gt[0])
         yy1 = np.maximum(bb_test[1], bb_gt[1])
         xx2 = np.minimum(bb_test[2], bb_gt[2])
@@ -261,28 +245,27 @@ class Sort:
         h = np.maximum(0., yy2 - yy1)
         wh = w * h
         o = wh / (
-            (bb_test[2] - bb_test[0]) * (bb_test[3] - bb_test[1]) +
-            (bb_gt[2] - bb_gt[0]) * (bb_gt[3] - bb_gt[1]) - wh
+                (bb_test[2] - bb_test[0]) * (bb_test[3] - bb_test[1]) +
+                (bb_gt[2] - bb_gt[0]) * (bb_gt[3] - bb_gt[1]) - wh
         )
         return o
 
+
 ##########################################################
-# Global Parameters and Settings
+# Global Parameter Settings
 ##########################################################
-XLSX_PATH = r"./log/intersection_log_1.xlsm"
+XLSX_PATH = r"./log/intersection_log_3.xlsm"
 IMAGE_FOLDER = "./data"
 RVEC_PATH = "rotation_vectors.npy"
 TVEC_PATH = "translation_vectors.npy"
 CAMERA_MATRIX_PATH = "rgb_intrinsic_matrix.npy"
 DIST_COEFFS_PATH = "dist_coeffs.npy"
 
-FORWARD_LENGTH_3D = 0.8  # Forward length for 3D vector (meters)
-FORWARD_LENGTH_2D = 0.2  # Forward length for 2D vector (meters)
-
-# 3D plot axes limits (display in feet)
-X_LIMITS = (-10, 10)
-Y_LIMITS = (-16, 16)
-Z_LIMITS = (-10, 3)
+FORWARD_LENGTH_3D = 0.8  # m
+FORWARD_LENGTH_2D = 0.2  # m
+X_LIMITS = (-10, 10)  # ft
+Y_LIMITS = (-16, 16)  # ft
+Z_LIMITS = (-10, 3)  # ft
 
 RANSAC_THRESHOLD = 0.01
 RANSAC_MAX_ITERATIONS = 150
@@ -298,11 +281,18 @@ STABLE_POINTS_SET = [4, 33, 133, 263, 362, 61, 291, 13]
 SMOOTH_WINDOW_SIZE = 3
 INITIALIZATION_FRAMES = 10
 
-# Original cube data is defined in feet. Colors are adjusted to be as different as possible.
+###############################################
+# Unit Conversion Definitions: The original CUBES_INFO data is in feet
+###############################################
+FT_TO_M = 0.3048  # 1 ft = 0.3048 m
+M_TO_FT = 3.28084  # 1 m ≈ 3.28084 ft
+
+# Define CUBES_INFO (in feet); later these will be converted to meters for computations
+
 CUBES_INFO = [
     {
         "name": "Plane1",
-        "color": "cyan",
+        "color": "red",
         "face_points": [
             [4, 7, -5],
             [10, 7, -5],
@@ -315,7 +305,7 @@ CUBES_INFO = [
     },
     {
         "name": "Plane2",
-        "color": "magenta",
+        "color": "blue",
         "face_points": [
             [-1, 5, -1],
             [4, 5, -1],
@@ -328,7 +318,7 @@ CUBES_INFO = [
     },
     {
         "name": "Plane3",
-        "color": "yellow",
+        "color": "green",
         "face_points": [
             [-4.5, 5, -2],
             [-3, 5, -2],
@@ -341,20 +331,20 @@ CUBES_INFO = [
     },
     {
         "name": "Plane4",
-        "color": "blue",
+        "color": "yellow",
         "face_points": [
-            [-6, -2.5, -5],
-            [-6, 18.5, -5],
-            [-6, -2.5, 3]
+            [-6.5, -2.5, -5],
+            [-6.5, 18.5, -5],
+            [-6.5, -2.5, 3]
         ],
-        "depth_point": [-6.5, 0, 0],
+        "depth_point": [-6, 0, 0],
         "invert_x": True,
         "invert_y": True,
         "record_face": 1
     },
     {
         "name": "Plane5",
-        "color": "orange",
+        "color": "purple",
         "face_points": [
             [-6, 18.5, -5],
             [8, 18.5, -5],
@@ -367,7 +357,7 @@ CUBES_INFO = [
     },
     {
         "name": "Plane6",
-        "color": "green",
+        "color": "brown",
         "face_points": [
             [5.5, 5, -0.5],
             [8, 5, -0.5],
@@ -380,27 +370,71 @@ CUBES_INFO = [
     },
     {
         "name": "Plane7",
-        "color": "purple",
+        "color": "black",
         "face_points": [
-            [10, -2.5, -5],
-            [10, 18, -5],
-            [10, -2.5, 3]
+            [10.5, -2.5, -5],
+            [10.5, 18, -5],
+            [10.5, -2.5, 3]
         ],
-        "depth_point": [10.5, 0, 0],
+        "depth_point": [10, 0, 0],
         "invert_x": True,
         "invert_y": False,
         "record_face": 1
     }
-]
+    # ,
+    # {
+    #     "name": "Wall1",
+    #     "color": "cyan",
+    #     "face_points": [
+    #         [-1.75, 3, -3],
+    #         [1.75, 3, -3],
+    #         [-1.75, 3, 0]
+    #     ],
+    #     "depth_point": [0, 5, 0],
+    #     "invert_x": True,
+    #     "invert_y": True,
+    #     "record_face": 0
+    # },
+    # {
+    #     "name": "Wall2",
+    #     "color": "red",
+    #     "face_points": [
+    #         [-2, -3, -3],
+    #         [-2, 3, -3],
+    #         [-2, -3, 0]
+    #     ],
+    #     "depth_point": [-1.75, 0, 0],
+    #     "invert_x": True,
+    #     "invert_y": True,
+    #     "record_face": 1
+    # },
+#     {
+#         "name": "Wall3",
+#         "color": "green",
+#         "face_points": [
+#             [2, -3, -3],
+#             [2, 3, -3],
+#             [2, -3, 0]
+#         ],
+#         "depth_point": [1.75, 5, 0],
+#         "invert_x": True,
+#         "invert_y": False,
+#         "record_face": 1
+#     }
+
+ ]
+
+# At program start, convert all points in CUBES_INFO from feet to meters for internal calculations
+for cube in CUBES_INFO:
+    cube["face_points"] = (np.array(cube["face_points"], dtype=float) * FT_TO_M).tolist()
+    cube["depth_point"] = (np.array(cube["depth_point"], dtype=float) * FT_TO_M).tolist()
+
 
 ##########################################################
-# Modified plot_cube_with_index: Returns a list of (face_idx, face_points)
+# Improved plot_cube_with_index: Convert m back to ft before plotting (Method A)
 ##########################################################
 def plot_cube_with_index(ax, face_points, depth_point, color='r', alpha=0.5):
-    """
-    Given three face points and a depth point, compute all 6 faces of a cube.
-    If ax is provided, plot the cube in a 3D matplotlib axis.
-    """
+    # face_points and depth_point are in meters for internal computations
     p0, p1, p2 = face_points
     vec1 = p1 - p0
     vec2 = p2 - p0
@@ -426,40 +460,39 @@ def plot_cube_with_index(ax, face_points, depth_point, color='r', alpha=0.5):
     cube_faces.append((4, side3))
     cube_faces.append((5, side4))
     if ax is not None:
-        poly3d_list = [face for idx, face in cube_faces]
+        # Method A: Convert all meter data to feet before plotting
+        poly3d_list = []
+        for idx, face in cube_faces:
+            face_ft = [(np.array(pt) * M_TO_FT).tolist() for pt in face]
+            poly3d_list.append(face_ft)
         poly = Poly3DCollection(poly3d_list, facecolors=color, edgecolors='k', alpha=alpha)
         ax.add_collection3d(poly)
     return cube_faces
 
+
 ##########################################################
-# Additional function: Plot each vertex of a face with different colors
+# New Function: Plot each vertex of the same face (four vertices) in different colors (converted to ft first)
 ##########################################################
 def plot_face_points_with_colors(ax, face, colors=None, s=80):
-    """
-    Plot each point of the given face with different colors and annotate them.
-    """
     if colors is None:
         colors = ['red', 'green', 'blue', 'yellow']
-    for i, pt in enumerate(face):
+    face_ft = [(np.array(pt) * M_TO_FT).tolist() for pt in face]
+    for i, pt in enumerate(face_ft):
         ax.scatter(pt[0], pt[1], pt[2], color=colors[i % len(colors)], s=s)
         ax.text(pt[0], pt[1], pt[2], f'{i}', color='black', fontsize=10)
 
+
 ##########################################################
-# Geometry and Detection Related Functions
+# Geometry / Detection Related Functions
 ##########################################################
 def load_distortion_coeffs(dist_coeffs_path):
-    """
-    Load camera distortion coefficients from a file.
-    """
     if not os.path.exists(dist_coeffs_path):
         logging.warning(f"Distortion file not found: {dist_coeffs_path}. Assuming no distortion.")
         return np.zeros((5, 1), dtype=np.float32)
     return np.load(dist_coeffs_path).astype(np.float32)
 
+
 def load_vectors(rvec_path, tvec_path):
-    """
-    Load rotation and translation vectors from files.
-    """
     if not os.path.exists(rvec_path):
         raise FileNotFoundError(f"Rotation vector not found: {rvec_path}")
     if not os.path.exists(tvec_path):
@@ -470,11 +503,8 @@ def load_vectors(rvec_path, tvec_path):
     tvec = tvec.reshape(3, 1) if tvec.shape == (3,) else tvec
     return rvec.astype(np.float32), tvec.astype(np.float32)
 
+
 def initialize_realsense():
-    """
-    Initialize the RealSense pipeline and return the pipeline, depth scale,
-    camera intrinsics, and distortion coefficients.
-    """
     logging.info("Initializing RealSense pipeline...")
     pipeline = rs.pipeline()
     config = rs.config()
@@ -489,11 +519,8 @@ def initialize_realsense():
     distortion_coeffs = np.array(intrinsics.coeffs, dtype=np.float32).reshape(5, 1)
     return pipeline, depth_scale, intrinsics, distortion_coeffs
 
+
 def draw_axes(img, origin, imgpts):
-    """
-    Draw 3 coordinate axes on an image given an origin and projected axis endpoints.
-    (This function is no longer used in the real-time display.)
-    """
     imgpts = imgpts.astype(int)
     colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0)]
     for i, pt in enumerate(imgpts):
@@ -501,11 +528,8 @@ def draw_axes(img, origin, imgpts):
         img = cv2.line(img, origin, pt_tuple, colors[i], 3)
     return img
 
+
 def reorder_face_points4(face_points):
-    """
-    Reorder the four points of a face so that the first point is the reference,
-    and the others are ordered based on distance from the reference.
-    """
     p0 = face_points[0]
     others = face_points[1:]
     dist_list = []
@@ -522,10 +546,8 @@ def reorder_face_points4(face_points):
     new_points = np.array([p0, p1, p2, p3], dtype=float)
     return new_points
 
+
 def face_local_uv(intersection_point, face_points, invert_x=False, invert_y=False):
-    """
-    Compute local UV coordinates of an intersection point on a face.
-    """
     new_pts = reorder_face_points4(face_points)
     p0, p1, p2, p3 = new_pts
     u_axis = p1 - p0
@@ -543,10 +565,8 @@ def face_local_uv(intersection_point, face_points, invert_x=False, invert_y=Fals
         v_local = v_length - v_local
     return (u_local, v_local, u_length, v_length)
 
+
 def intersect_line_with_plane(p0, dir_vec, plane_points):
-    """
-    Compute the intersection of a line (origin p0 and direction dir_vec) with a plane defined by four points.
-    """
     p1, p2, p3, p4 = plane_points
     normal = np.cross(p2 - p1, p3 - p1)
     nrm = np.linalg.norm(normal)
@@ -561,16 +581,12 @@ def intersect_line_with_plane(p0, dir_vec, plane_points):
         return None
     return d
 
+
 def area_of_triangle(a, b, c):
-    """
-    Compute the area of a triangle given by three points.
-    """
     return 0.5 * np.linalg.norm(np.cross(b - a, c - a))
 
+
 def point_in_polygon(point, polygon):
-    """
-    Check if a point lies within a convex quadrilateral (polygon).
-    """
     p1, p2, p3, p4 = polygon
     area_orig = area_of_triangle(p1, p2, p3) + area_of_triangle(p1, p3, p4)
     area_test = (area_of_triangle(point, p1, p2) +
@@ -579,10 +595,8 @@ def point_in_polygon(point, polygon):
                  area_of_triangle(point, p4, p1))
     return np.isclose(area_orig, area_test, atol=1e-9)
 
+
 def intersect_line_with_polygon(p0, dir_vec, polygon):
-    """
-    Compute the intersection of a line with a polygon. Returns the intersection point if inside.
-    """
     t = intersect_line_with_plane(p0, dir_vec, polygon)
     if t is None:
         return None
@@ -591,11 +605,8 @@ def intersect_line_with_polygon(p0, dir_vec, polygon):
         return intersect_point
     return None
 
-# Note: Intersection calculation uses cubes for computation (in meters)
+
 def find_frontmost_intersection(p0, dir_vec, all_cubes):
-    """
-    Find the frontmost intersection point between a line and a set of cubes.
-    """
     closest_dist = float('inf')
     closest_hit = None
     for cube_data, cube_faces in all_cubes:
@@ -608,10 +619,9 @@ def find_frontmost_intersection(p0, dir_vec, all_cubes):
                     closest_hit = (cube_data, face_idx, face_points, ipt)
     return closest_hit
 
-def stable_nose_direction(R_local, old_nose_dir, nose_world_3d, camera_world_position, angle_threshold_deg=60.0):
-    """
-    Stabilize the nose direction vector to avoid abrupt changes.
-    """
+
+def stable_nose_direction(R_local, old_nose_dir, nose_world_3d, camera_world_position,
+                          angle_threshold_deg=60.0):
     new_z = R_local[:, 2]
     to_camera = (camera_world_position - nose_world_3d).ravel()
     if old_nose_dir is None:
@@ -627,10 +637,8 @@ def stable_nose_direction(R_local, old_nose_dir, nose_world_3d, camera_world_pos
         R_local[:, 2] = -new_z
     return R_local
 
+
 def clear_all_3d_objects(ax, track_draw_data, intersection_draw_data):
-    """
-    Remove all 3D objects from the matplotlib axis.
-    """
     for tid, tdd in track_draw_data.items():
         scat_obj = tdd["scatter"]
         line_obj = tdd["nose_line"]
@@ -646,10 +654,8 @@ def clear_all_3d_objects(ax, track_draw_data, intersection_draw_data):
     track_draw_data.clear()
     intersection_draw_data.clear()
 
+
 def show_log_window():
-    """
-    Display the log messages in a separate OpenCV window.
-    """
     width = 800
     height = 400
     log_canvas = np.zeros((height, width, 3), dtype=np.uint8)
@@ -667,10 +673,8 @@ def show_log_window():
         cv2.putText(log_canvas, line, (x0, y), font, font_scale, color_text, thickness, cv2.LINE_AA)
     cv2.imshow("Log Window", log_canvas)
 
+
 def define_local_coordinate_system(points_world_dict, stable_points_set, initial_R_local=None):
-    """
-    Define a local coordinate system based on stable world points.
-    """
     stable_points = []
     for sp in stable_points_set:
         if sp not in points_world_dict:
@@ -697,22 +701,22 @@ def define_local_coordinate_system(points_world_dict, stable_points_set, initial
     origin = centroid.T
     return origin, R_local
 
+
 ##########################################################
-# Initialize MediaPipe drawing tools for face mesh landmarks
+# Added: Import MediaPipe drawing utilities for face mesh landmarks
 ##########################################################
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
+
 
 ##########################################################
 # Main Program
 ##########################################################
 def main():
     logging.info("Program started.")
-    # Start thread to flush log records to Excel
     flush_thread = threading.Thread(target=flush_thread_func, args=(XLSX_PATH,), daemon=True)
     flush_thread.start()
 
-    # Define reference points for nose stabilization (in meters)
     reference_points = np.array([
         [0.0, 0.0, 0.0],
         [-0.03, 0.02, 0.0],
@@ -724,28 +728,26 @@ def main():
         [0.0, -0.03, 0.0]
     ], dtype=np.float32).T
 
-    # Get the existing maximum Face_ID from Excel to continue numbering
     existing_max_id = get_max_face_id_from_xlsm(XLSX_PATH)
     if existing_max_id < 0:
         existing_max_id = -1
     KalmanBoxTracker.count = existing_max_id + 1
     logging.info(f"Loaded existing max Face_ID = {existing_max_id}, next new ID = {KalmanBoxTracker.count}")
 
-    # Parse command-line arguments
+    # Parse command line arguments (crop parameters removed)
     parser = argparse.ArgumentParser()
     parser.add_argument("--enable_log", action="store_true", default=True,
-                        help="Log intersection data into Excel (default: True)")
+                        help="Whether to log intersection data into Excel. (default: True)")
     parser.add_argument("--enable_3d_plot", action="store_true", default=False,
-                        help="Display a 3D plot (default: False)")
+                        help="Whether to display a 3D plot. (default: False)")
     parser.add_argument("--enable_display", action="store_true", default=False,
-                        help="Show real-time video in an OpenCV window (default: False)")
+                        help="Whether to show real-time video in an OpenCV window. (default: False)")
     parser.add_argument("--rotate180", action="store_false", default=True,
-                        help="Disable 180 degree flip of camera image if specified")
+                        help="Flip camera image 180 deg by default; specify --rotate180 to disable flipping.")
     args = parser.parse_args()
 
     runtime_flip180 = args.rotate180
 
-    # Load camera calibration files and intrinsic parameters
     rvec_path = os.path.join(IMAGE_FOLDER, RVEC_PATH)
     tvec_path = os.path.join(IMAGE_FOLDER, TVEC_PATH)
     camera_matrix_path = os.path.join(IMAGE_FOLDER, CAMERA_MATRIX_PATH)
@@ -758,19 +760,16 @@ def main():
     dist_coeffs = load_distortion_coeffs(dist_coeffs_path)
     rvec, tvec = load_vectors(rvec_path, tvec_path)
 
-    # Convert rotation vector to rotation matrix
     R_loaded, _ = cv2.Rodrigues(rvec)
     R_inv = R_loaded.T
     t_wc = -R_loaded.T @ tvec
 
-    # Initialize the RealSense pipeline and get camera parameters
     pipeline, depth_scale, intrinsics_realsense, distortion_coeffs_realsense = initialize_realsense()
     fx_realsense = intrinsics_realsense.fx
     fy_realsense = intrinsics_realsense.fy
     cx_realsense = intrinsics_realsense.ppx
     cy_realsense = intrinsics_realsense.ppy
 
-    # Configure RealSense filters for depth image processing
     spatial = rs.spatial_filter()
     spatial.set_option(rs.option.holes_fill, 3)
     spatial.set_option(rs.option.filter_smooth_alpha, 0.5)
@@ -785,7 +784,6 @@ def main():
     align_to = rs.stream.color
     align = rs.align(align_to)
 
-    # Initialize MediaPipe Face Mesh detector
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(
         static_image_mode=False,
@@ -796,64 +794,55 @@ def main():
     )
     logging.info("MediaPipe FaceMesh initialized.")
 
-    # Initialize the 3D plot if enabled
     fig = None
     ax = None
     if args.enable_3d_plot:
         fig = plt.figure(figsize=(8, 6))
         ax = fig.add_subplot(111, projection='3d')
         ax.set_proj_type('persp')
-        # Set axis limits in feet (display units)
+        # Here X_LIMITS, Y_LIMITS, Z_LIMITS are in ft range
         ax.set_xlim(X_LIMITS)
         ax.set_ylim(Y_LIMITS)
         ax.set_zlim(Z_LIMITS)
         ax.set_xlabel('X (ft)')
         ax.set_ylabel('Y (ft)')
         ax.set_zlabel('Z (ft)')
-        ax.set_title('Multi-Face Nose Vector in 3D (ft)')
+        ax.set_title('Multi-Face Nose Vector in 3D')
         ax.grid(True)
         ax.invert_zaxis()
         ax.invert_yaxis()
         plt.show(block=False)
 
-    # Define conversion factors: original cube data is in feet.
-    # Convert feet to meters for computations, and back to feet for display.
-    FT_TO_M = 0.3048
-    M_TO_FT = 1 / FT_TO_M
-
-    # Build cube data for computations (in meters) and for display (in feet)
-    all_cubes_calc = []  # For computation (meters)
-    all_cubes_plot = []  # For display (feet)
-    for cube in CUBES_INFO:
-        face_points_ft = np.array(cube["face_points"], dtype=float)  # in feet
-        depth_point_ft = np.array(cube["depth_point"], dtype=float)  # in feet
-        # Convert to meters for computation
-        face_points_m = face_points_ft * FT_TO_M
-        depth_point_m = depth_point_ft * FT_TO_M
-
-        try:
-            faces_m = plot_cube_with_index(None, face_points_m, depth_point_m, color='gray', alpha=0.0)
-        except Exception as e:
-            logging.error(f"Error in cube computation: {e}")
-            faces_m = []
-        all_cubes_calc.append((cube, faces_m))
-
-        if ax is not None:
-            # For display, use original feet values and cube color from CUBES_INFO
-            faces_ft = plot_cube_with_index(ax, face_points_ft, depth_point_ft, color=cube["color"], alpha=0.6)
-            front_face = faces_ft[0][1]
-            plot_face_points_with_colors(ax, front_face, colors=['red', 'green', 'blue', 'yellow'], s=80)
-            all_cubes_plot.append((cube, faces_ft))
+    all_cubes = []
     if ax is not None:
-        legend_patches = [mpatches.Patch(color=cube["color"], label=cube["name"]) for cube, _ in all_cubes_plot]
+        legend_patches = []
+        for cube in CUBES_INFO:
+            face_points = np.array(cube["face_points"], dtype=float)
+            depth_point = np.array(cube["depth_point"], dtype=float)
+            # Call improved plot_cube_with_index; it converts m to ft for plotting
+            faces = plot_cube_with_index(ax, face_points, depth_point, color=cube["color"], alpha=0.6)
+            # Also plot the front face vertex points in ft
+            front_face = faces[0][1]
+            plot_face_points_with_colors(ax, front_face, colors=['red', 'green', 'blue', 'yellow'], s=80)
+            all_cubes.append((cube, faces))
+            patch = mpatches.Patch(color=cube["color"], label=cube["name"])
+            legend_patches.append(patch)
         ax.legend(handles=legend_patches, loc='upper right')
+    else:
+        for cube in CUBES_INFO:
+            face_points = np.array(cube["face_points"], dtype=float)
+            depth_point = np.array(cube["depth_point"], dtype=float)
+            faces = []
+            try:
+                faces = plot_cube_with_index(None, face_points, depth_point, color='gray', alpha=0.0)
+            except:
+                pass
+            all_cubes.append((cube, faces))
 
-    # Dictionaries to store drawing objects for each tracked face
     track_draw_data = {}
     intersection_draw_data = {}
     mot_tracker = Sort(max_age=10, min_hits=2)
 
-    # Variables for FPS calculation
     fps_frame_count = 0
     fps_start_time = time.time()
     fps = 0.0
@@ -861,10 +850,10 @@ def main():
     logging.info("Entering main loop.")
     try:
         while True:
-            # Retrieve frames from RealSense
+            # Retrieve RealSense raw frames
             frames = pipeline.wait_for_frames()
             if not frames:
-                logging.warning("No frames retrieved, continue to next loop.")
+                logging.warning("No frames retrieved, continue next loop.")
                 show_log_window()
                 cv2.waitKey(1)
                 time.sleep(FRAME_INTERVAL)
@@ -872,19 +861,18 @@ def main():
 
             color_frame_original = frames.get_color_frame()
             if not color_frame_original:
-                logging.warning("No color frame retrieved, skipping iteration.")
+                logging.warning("No color frame retrieved, skip iteration.")
                 show_log_window()
                 cv2.waitKey(1)
                 time.sleep(FRAME_INTERVAL)
                 continue
 
-            # Convert the color frame to a NumPy array
             color_image_original = np.asanyarray(color_frame_original.get_data())
             if runtime_flip180:
                 color_image_original = cv2.rotate(color_image_original, cv2.ROTATE_180)
             orig_height, orig_width = color_image_original.shape[:2]
 
-            # Crop the image if needed
+            # Crop the image
             if CROP_WIDTH > 0 and CROP_HEIGHT > 0:
                 crop_width = CROP_WIDTH
                 crop_height = CROP_HEIGHT
@@ -900,17 +888,15 @@ def main():
                 crop_width = orig_width
                 crop_height = orig_height
 
-            # Adjust the camera intrinsic matrix for cropping
+            # Adjust camera intrinsics (only modify principal point)
             new_camera_matrix = camera_matrix.copy()
             if CROP_WIDTH > 0 and CROP_HEIGHT > 0:
                 new_camera_matrix[0, 2] -= crop_x
                 new_camera_matrix[1, 2] -= crop_y
 
-            # Convert BGR to RGB for MediaPipe processing
             detection_input_rgb = cv2.cvtColor(detection_input, cv2.COLOR_BGR2RGB)
             results = face_mesh.process(detection_input_rgb)
 
-            # Create a copy of the image for visualization if enabled
             img_vis = detection_input.copy() if args.enable_display else None
 
             face_bboxes = []
@@ -930,15 +916,14 @@ def main():
                     y2 = min(crop_height, np.max(py))
                     face_bboxes.append([x1, y1, x2, y2])
                     face_landmarks_dict.append(face_landmarks)
-
-                # Draw face mesh landmarks on the display image if enabled
                 if img_vis is not None:
                     for face_landmarks in results.multi_face_landmarks:
                         mp_drawing.draw_landmarks(
                             image=img_vis,
                             landmark_list=face_landmarks,
                             connections=mp_face_mesh.FACEMESH_TESSELATION,
-                            landmark_drawing_spec=mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1, circle_radius=1),
+                            landmark_drawing_spec=mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1,
+                                                                         circle_radius=1),
                             connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_tesselation_style()
                         )
             else:
@@ -970,7 +955,6 @@ def main():
                 time.sleep(FRAME_INTERVAL)
                 continue
 
-            # Align frames and get the depth frame
             aligned_frames = align.process(frames)
             depth_frame = aligned_frames.get_depth_frame()
             color_frame_aligned = aligned_frames.get_color_frame()
@@ -980,7 +964,6 @@ def main():
                 time.sleep(FRAME_INTERVAL)
                 continue
 
-            # Convert aligned frames to NumPy arrays
             color_image_aligned = np.asanyarray(color_frame_aligned.get_data())
             if runtime_flip180:
                 color_image_aligned = cv2.rotate(color_image_aligned, cv2.ROTATE_180)
@@ -988,14 +971,12 @@ def main():
             if runtime_flip180:
                 depth_image = cv2.rotate(depth_image, cv2.ROTATE_180)
 
-            # Crop the aligned images to the same region
             color_image = color_image_aligned[crop_y:crop_y + crop_height, crop_x:crop_x + crop_width].copy()
             depth_image = depth_image[crop_y:crop_y + crop_height, crop_x:crop_x + crop_width].copy()
 
             if args.enable_display:
                 img_vis = color_image.copy()
 
-            # Update the SORT tracker with the face bounding boxes
             trackers_result = mot_tracker.update(face_bboxes)
             current_active_ids = set()
 
@@ -1007,7 +988,6 @@ def main():
                     cv2.putText(img_vis, f"ID: {tid}", (int(x1), int(y1) - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-                # Find the best matching face bounding box using IOU
                 best_iou = -1
                 best_fm_idx = -1
                 for fm_idx, fb in enumerate(face_bboxes):
@@ -1056,7 +1036,6 @@ def main():
                         sub_valid_idxs = np.array(sub_valid_idxs)[valid_mask]
                         depths = depths[valid_mask]
                         if len(xs_in) > 0:
-                            # Convert pixel coordinates to camera coordinates (in meters)
                             X = (xs_in - cx_realsense + crop_x) * depths / fx_realsense
                             Y = (ys_in - cy_realsense + crop_y) * depths / fy_realsense
                             Z = depths
@@ -1066,14 +1045,12 @@ def main():
                                 detected_points_world[k_] = world_arr[i_].reshape(3, 1)
 
                 if tid not in track_draw_data:
-                    # Create drawing objects for the nose point and nose vector.
-                    # Nose point is displayed in red and intersection point in lime.
                     scobj = None
                     lineobj = None
                     headobj = None
                     if ax is not None:
-                        scobj = ax.scatter([], [], [], s=50, color='red')  # Nose origin (red)
-                        lineobj = ax.plot([], [], [], linewidth=2, color='blue')[0]  # Nose vector (blue)
+                        scobj = ax.scatter([], [], [], s=50)
+                        lineobj = ax.plot([], [], [], linewidth=2, color='blue')[0]
                         headobj = Poly3DCollection([], facecolors='red', edgecolors='none')
                         ax.add_collection3d(headobj)
                     track_draw_data[tid] = {
@@ -1087,7 +1064,7 @@ def main():
                         "last_nose_dir": None
                     }
                     if ax is not None:
-                        sc_int = ax.scatter([], [], [], c='lime', marker='o', s=60)  # Intersection point (lime)
+                        sc_int = ax.scatter([], [], [], c='magenta', marker='o', s=60)
                         intersection_draw_data[tid] = sc_int
                     else:
                         intersection_draw_data[tid] = None
@@ -1126,7 +1103,7 @@ def main():
                         detected_points_world, STABLE_POINTS_SET, tdd["initial_R_local"]
                     )
                     if R_local is not None:
-                        # Compute nose origin in meters
+                        # Internal origin and R_local are in meters
                         nose_world_3d = origin.ravel()
                         R_local = stable_nose_direction(
                             R_local,
@@ -1146,60 +1123,23 @@ def main():
                         tdd["frames_after_init"] += 1
                         if (tdd["initial_R_local"] is None) and (tdd["frames_after_init"] > INITIALIZATION_FRAMES):
                             tdd["initial_R_local"] = R_local.copy()
-                        # Compute the forward point (nose tip extended) in meters
+                        # Compute nose forward point (in m)
                         nose_forward_3d = origin + R_local[:, 2].reshape(3, 1) * FORWARD_LENGTH_3D
                         forward_point_3d = nose_forward_3d.ravel()
-
-                        ### Update the 3D plot (display version): Convert points from meters to feet
+                        # Convert nose position and forward point to feet for plotting
                         nose_world_ft = nose_world_3d * M_TO_FT
                         forward_point_ft = forward_point_3d * M_TO_FT
                         if ax is not None:
-                            # Update nose origin scatter (red)
                             scobj = tdd["scatter"]
                             if scobj is not None:
                                 scobj._offsets3d = ([nose_world_ft[0]], [nose_world_ft[1]], [nose_world_ft[2]])
-                            # Update the nose direction line (blue)
                             nose_line = tdd["nose_line"]
-                            if nose_line is not None:
+                            nose_head = tdd["nose_head"]
+                            if nose_line is not None and nose_head is not None:
                                 xs = [nose_world_ft[0], forward_point_ft[0]]
                                 ys = [nose_world_ft[1], forward_point_ft[1]]
                                 zs = [nose_world_ft[2], forward_point_ft[2]]
                                 nose_line.set_data_3d(xs, ys, zs)
-                        ### Update the intersection point scatter (lime)
-                        sc_int = intersection_draw_data[tid]
-                        closest_hit = find_frontmost_intersection(
-                            nose_world_3d,
-                            forward_point_3d - nose_world_3d,
-                            all_cubes_calc
-                        )
-                        if closest_hit is not None:
-                            cube_data, face_idx, face_points, ipt_3d = closest_hit
-                            # Log if the face index matches the record_face, otherwise only update display
-                            if face_idx == cube_data.get("record_face", 0):
-                                invert_x = cube_data.get("invert_x", False)
-                                invert_y = cube_data.get("invert_y", False)
-                                u_local, v_local, u_len, v_len = face_local_uv(
-                                    ipt_3d,
-                                    face_points,
-                                    invert_x=invert_x,
-                                    invert_y=invert_y
-                                )
-                                plane_name = cube_data["name"]
-                                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                logging.info(f"[HIT] ID={tid}, plane={plane_name}, face_idx={face_idx}, "
-                                             f"hit=({ipt_3d[0]:.3f},{ipt_3d[1]:.3f},{ipt_3d[2]:.3f}), "
-                                             f"u_local={u_local:.3f}/{u_len:.3f}, v_local={v_local:.3f}/{v_len:.3f}")
-                                if args.enable_log:
-                                    log_intersection_2d_async(tid, plane_name, u_local, v_local, now_str)
-                            else:
-                                logging.info(f"[BLOCK] ID={tid}, face_idx={face_idx} does not match record_face.")
-                            if ax is not None and sc_int is not None:
-                                ipt_ft = ipt_3d * M_TO_FT
-                                sc_int._offsets3d = ([ipt_ft[0]], [ipt_ft[1]], [ipt_ft[2]])
-                        else:
-                            if ax is not None and sc_int is not None:
-                                sc_int._offsets3d = ([], [], [])
-                        ### Draw the nose vector in the 2D real-time display
                         if img_vis is not None:
                             nose_forward_2d = origin + R_local[:, 2].reshape(3, 1) * FORWARD_LENGTH_2D
                             nose_3d_pts = np.vstack([origin.T, nose_forward_2d.T])
@@ -1209,6 +1149,43 @@ def main():
                             end_pt_2d = tuple(nose_imgpts[1])
                             cv2.arrowedLine(img_vis, start_pt_2d, end_pt_2d, (0, 255, 255), 3, tipLength=0.2)
                             cv2.circle(img_vis, end_pt_2d, 5, (0, 255, 255), -1)
+                        closest_hit = find_frontmost_intersection(
+                            nose_world_3d,
+                            forward_point_3d - nose_world_3d,
+                            all_cubes
+                        )
+                        sc_int = intersection_draw_data[tid]
+                        if closest_hit is not None:
+                            cube_data, face_idx, face_points, ipt_3d = closest_hit
+                            # Convert intersection point from m to ft
+                            ipt_ft = ipt_3d * M_TO_FT
+                            record_uv = (face_idx == cube_data.get("record_face", 0))
+                            if record_uv:
+                                invert_x = cube_data.get("invert_x", False)
+                                invert_y = cube_data.get("invert_y", False)
+                                u_local, v_local, u_len, v_len = face_local_uv(
+                                    ipt_3d,
+                                    face_points,
+                                    invert_x=invert_x,
+                                    invert_y=invert_y
+                                )
+                                # Convert uv coordinates to ft
+                                u_local_ft = u_local * M_TO_FT
+                                v_local_ft = v_local * M_TO_FT
+                                plane_name = cube_data["name"]
+                                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                logging.info(f"[HIT] ID={tid}, plane={plane_name}, face_idx={face_idx}, "
+                                             f"hit=({ipt_3d[0]:.3f},{ipt_3d[1]:.3f},{ipt_3d[2]:.3f}), "
+                                             f"u_local={u_local_ft:.3f}/{u_len * M_TO_FT:.3f}, v_local={v_local_ft:.3f}/{v_len * M_TO_FT:.3f}")
+                                if args.enable_log:
+                                    log_intersection_2d_async(tid, plane_name, u_local_ft, v_local_ft, now_str)
+                            else:
+                                logging.info(f"[BLOCK] ID={tid}, face_idx={face_idx} does not match record_face.")
+                            if ax is not None and sc_int is not None:
+                                sc_int._offsets3d = ([ipt_ft[0]], [ipt_ft[1]], [ipt_ft[2]])
+                        else:
+                            if ax is not None and sc_int is not None:
+                                sc_int._offsets3d = ([], [], [])
             for old_tid in list(track_draw_data.keys()):
                 if old_tid not in current_active_ids:
                     if ax is not None:
@@ -1226,8 +1203,19 @@ def main():
                             del intersection_draw_data[old_tid]
                     del track_draw_data[old_tid]
             if img_vis is not None:
-                # Note: The following block that draws the coordinate axes on the 2D display has been removed.
-                # This prevents the real-time display from showing the three axes representing the real-world origin.
+                axis_length = 0.2
+                axes_3d = np.float32([
+                    [axis_length, 0, 0],
+                    [0, axis_length, 0],
+                    [0, 0, axis_length]
+                ])
+                imgpts, _ = cv2.projectPoints(axes_3d, rvec, tvec, new_camera_matrix, dist_coeffs)
+                imgpts = imgpts.reshape(-1, 2)
+                origin_world = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
+                origin_img, _ = cv2.projectPoints(origin_world, rvec, tvec, new_camera_matrix, dist_coeffs)
+                origin_img = tuple(origin_img.reshape(-1, 2).astype(int)[0])
+                img_vis = draw_axes(img_vis, origin_img, imgpts.astype(int))
+                cv2.circle(img_vis, origin_img, 5, (0, 0, 255), -1)
                 fps_frame_count += 1
                 elapsed_time = time.time() - fps_start_time
                 if elapsed_time >= 1.0:

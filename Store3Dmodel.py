@@ -11,7 +11,7 @@ Z_LIMITS = (-10, 3)
 CUBES_INFO = [
     {
         "name": "Plane1",
-        "color": "cyan",
+        "color": "red",
         "face_points": [
             [4, 7, -5],
             [10, 7, -5],
@@ -24,7 +24,7 @@ CUBES_INFO = [
     },
     {
         "name": "Plane2",
-        "color": "red",
+        "color": "blue",
         "face_points": [
             [-1, 5, -1],
             [4, 5, -1],
@@ -50,20 +50,20 @@ CUBES_INFO = [
     },
     {
         "name": "Plane4",
-        "color": "red",
+        "color": "yellow",
         "face_points": [
-            [-6, -2.5, -5],
-            [-6, 18.5, -5],
-            [-6, -2.5, 3]
+            [-6.5, -2.5, -5],
+            [-6.5, 18.5, -5],
+            [-6.5, -2.5, 3]
         ],
-        "depth_point": [-6.5, 0, 0],
+        "depth_point": [-6, 0, 0],
         "invert_x": True,
         "invert_y": True,
         "record_face": 1
     },
     {
         "name": "Plane5",
-        "color": "red",
+        "color": "purple",
         "face_points": [
             [-6, 18.5, -5],
             [8, 18.5, -5],
@@ -76,7 +76,7 @@ CUBES_INFO = [
     },
     {
         "name": "Plane6",
-        "color": "red",
+        "color": "brown",
         "face_points": [
             [5.5, 5, -0.5],
             [8, 5, -0.5],
@@ -89,43 +89,44 @@ CUBES_INFO = [
     },
     {
         "name": "Plane7",
-        "color": "green",
+        "color": "black",
         "face_points": [
-            [10, -2.5, -5],
-            [10, 18, -5],
-            [10, -2.5, 3]
+            [10.5, -2.5, -5],
+            [10.5, 18, -5],
+            [10.5, -2.5, 3]
         ],
-        "depth_point": [10.5, 0, 0],
+        "depth_point": [10, 0, 0],
         "invert_x": True,
         "invert_y": False,
         "record_face": 1
-    },
-    {
-        "name": "Wall1",
-        "color": "cyan",
-        "face_points": [
-            [-1.75, 3, -3],
-            [1.75, 3, -3],
-            [-1.75, 3, 0]
-        ],
-        "depth_point": [0, 5, 0],
-        "invert_x": True,
-        "invert_y": True,
-        "record_face": 0
-    },
-#     {
-#         "name": "Wall2",
-#         "color": "red",
-#         "face_points": [
-#             [-2, -3, -3],
-#             [-2, 3, -3],
-#             [-2, -3, 0]
-#         ],
-#         "depth_point": [-1.75, 0, 0],
-#         "invert_x": True,
-#         "invert_y": True,
-#         "record_face": 1
-#     },
+    }
+    # ,
+    # {
+    #     "name": "Wall1",
+    #     "color": "cyan",
+    #     "face_points": [
+    #         [-1.75, 3, -3],
+    #         [1.75, 3, -3],
+    #         [-1.75, 3, 0]
+    #     ],
+    #     "depth_point": [0, 5, 0],
+    #     "invert_x": True,
+    #     "invert_y": True,
+    #     "record_face": 0
+    # },
+    # {
+    #     "name": "Wall2",
+    #     "color": "red",
+    #     "face_points": [
+    #         [-2, -3, -3],
+    #         [-2, 3, -3],
+    #         [-2, -3, 0]
+    #     ],
+    #     "depth_point": [-1.75, 0, 0],
+    #     "invert_x": True,
+    #     "invert_y": True,
+    #     "record_face": 1
+    # },
 #     {
 #         "name": "Wall3",
 #         "color": "green",
@@ -139,10 +140,11 @@ CUBES_INFO = [
 #         "invert_y": False,
 #         "record_face": 1
 #     }
+
  ]
 
 def plot_cube_with_index(ax, face_points, depth_point, color='r', alpha=0.5, plane_name=""):
-    # Convert list to numpy array for vector calculations
+    # 將輸入的點轉成 numpy 陣列以便向量計算
     p0, p1, p2 = face_points
     vec1 = p1 - p0
     vec2 = p2 - p0
@@ -150,20 +152,21 @@ def plot_cube_with_index(ax, face_points, depth_point, color='r', alpha=0.5, pla
     if np.allclose(np.cross(vec1, vec2), 0):
         raise ValueError("Invalid face points (collinear).")
 
+    # 根據輸入的三個點計算第四個點
     p3 = p1 + (p2 - p0)
     front_face = [p0, p1, p3, p2]
 
-    # Compute the face normal and the depth offset
+    # 計算面法向量以及深度偏移
     normal = np.cross(vec1, vec2)
     normal /= np.linalg.norm(normal)
     dp_vec = depth_point - p0
     depth = np.dot(dp_vec, normal)
     offset = depth * normal
 
-    # Calculate the back face by offsetting the front face
+    # 根據偏移計算後面的面
     back_face = [v + offset for v in front_face]
 
-    # Define side faces of the cube
+    # 定義立方體側面
     side1 = [front_face[0], front_face[1], back_face[1], back_face[0]]
     side2 = [front_face[1], front_face[2], back_face[2], back_face[1]]
     side3 = [front_face[2], front_face[3], back_face[3], back_face[2]]
@@ -176,18 +179,18 @@ def plot_cube_with_index(ax, face_points, depth_point, color='r', alpha=0.5, pla
     cube_faces.append((4, side3))
     cube_faces.append((5, side4))
 
-    # Add 3D polygons to the plot
+    # 將多邊形加入到 3D 圖中
     if ax is not None:
         poly3d_list = [face for idx, face in cube_faces]
         poly = Poly3DCollection(poly3d_list, facecolors=color, edgecolors='k', alpha=alpha)
         ax.add_collection3d(poly)
 
-        # Plot corners (vertices) with different colors
-        vertices = np.array([p0, p1, p2, p3, back_face[0], back_face[1], back_face[2], back_face[3]])
-        vertex_colors = ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'pink', 'brown']
+        # 只繪製 face_points 中的三個頂點，並給予指定顏色
+        vertices = np.array([p0, p1, p2])
+        vertex_colors = ['red', 'green', 'blue']  # 可以根據需要更改顏色
         ax.scatter(vertices[:, 0], vertices[:, 1], vertices[:, 2], c=vertex_colors, s=50)
 
-        # Add plane name at the centroid of the front face
+        # 在前面板的中心標註平面的名稱
         centroid = np.mean(front_face, axis=0)
         ax.text(centroid[0], centroid[1], centroid[2], plane_name, color='black', fontsize=12)
 
