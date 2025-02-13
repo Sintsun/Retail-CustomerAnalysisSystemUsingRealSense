@@ -7,7 +7,7 @@ This project implements a customer analysis system that uses an Intel RealSense 
 - [Step 1: Chessboard Calibration Tool](#step-1-chessboard-calibration-tool)
 - [Step 2: Constructing the Store's 3D Model](#step-2-constructing-the-stores-3d-model)
 - [Step 3: Real-Time Face Intersection Tracking, Logging, and 3D Visualization](#step-3-real-time-face-intersection-tracking-logging-and-3d-visualization)
-- [Step 4: Heatmap Generation and Auto-Resizing Image Viewer](#step-4-heatmap-generation-and-auto-resizing-image-viewer)
+- [Step 4: Heatmap Generation and Auto-Resizing Image Viewer](#step-4-heatmap-generation)
 - [Troubleshooting](#troubleshooting)
 - [Acknowledgements](#acknowledgements)
 
